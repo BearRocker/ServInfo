@@ -70,8 +70,13 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await context.job_queue.stop(wait=True)
-    await update.message.reply_text(f"Stopped monitoring")
+    current_jobs = context.job_queue.get_jobs_by_name("monitoring_job")
+    if not current_jobs:
+        await update.message.reply_text("Мониторинг не запущен")
+        return
+    for job in current_jobs:
+        job.schedule_removal()
+    await update.message.reply_text("Мониторинг остановлен")
 
 
 async def got_it(update: Update, context: ContextTypes.DEFAULT_TYPE):
