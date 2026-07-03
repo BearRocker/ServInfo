@@ -1,17 +1,13 @@
 # Idea to do: Server/PC resource check with tg possible idea connect wia ssh and get the info from that if tg is not possible on server
 # What to do up a local server (container obviously) or connect via ssh and use psutil for interface tg or web depends on what to use
-import asyncio
 import logging
 import time
 from datetime import timedelta, datetime
-
 import psutil
 import os
-from telegram.ext import Application, CommandHandler, ContextTypes, ApplicationBuilder
+from telegram.ext import Application, CommandHandler, ContextTypes
 from telegram import Update
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from config import load_config
-
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -22,6 +18,7 @@ cpu_alert, ram_alert = 90, 90
 global_interval = 10
 message_to_edit = 0
 
+
 def get_server_usage():
     ram = psutil.virtual_memory()
     cpu = psutil.cpu_percent(interval=1)
@@ -31,7 +28,7 @@ def get_server_usage():
 async def monitoring_job(context: ContextTypes.DEFAULT_TYPE):
     global cpu_alert, ram_alert
     cpu_usage, ram_usage_perc, ram_usage_gig = get_server_usage()
-    await context.bot.edit_message_text(chat_id=context.job.chat_id, message_id=int(context.job.data.id), text=f"CPU Usage: {cpu_usage}%\nRAM usage (%): {ram_usage_perc}%"
+    await context.bot.edit_message_text(chat_id=context.job.chat_id, message_id=int(context.job.data.message_id), text=f"CPU Usage: {cpu_usage}%\nRAM usage (%): {ram_usage_perc}%"
             f"\nRAM usage (Gb): {ram_usage_gig}")
     alert = []
     if cpu_usage > cpu_alert:
@@ -45,14 +42,25 @@ async def monitoring_job(context: ContextTypes.DEFAULT_TYPE):
 
 async def start_up(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global message_to_edit
+    chat_id = update.effective_chat.id
+    for job in context.job_queue.get_jobs_by_name("restart_job"):
+        job.schedule_removal()
+
+    monitoring_jobs = context.job_queue.get_jobs_by_name("monitoring_job")
+    if monitoring_jobs:
+        await update.message.reply_text("Мониторинг уже запущен")
+        return
+
     os_name = "Linux" if os.name == "posix" else "Windows"
     server_time = time.ctime()
     cpu_usage, ram_usage_perc, ram_usage_gig = get_server_usage()
     await update.message.reply_text(f"Server OS: {os_name}\nServer Time: {server_time}\n")
     message_to_edit = await update.message.reply_text(f"CPU Usage: {cpu_usage}%\nRAM usage (%): {ram_usage_perc}%"
             f"\nRAM usage (Gb): {ram_usage_gig}")
-    await context.bot.pin_chat_message(chat_id=update.effective_chat.id, message_id=message_to_edit.message_id, disable_notification=True)
-    context.job_queue.run_repeating(monitoring_job, interval=global_interval, first=3, chat_id=update.effective_chat.id, data=message_to_edit, name="monitoring_job")
+
+    await context.bot.pin_chat_message(chat_id=chat_id, message_id=message_to_edit.message_id, disable_notification=True)
+    context.job_queue.run_repeating(monitoring_job, interval=global_interval, first=3, chat_id=chat_id, data=message_to_edit, name="monitoring_job")
+
 
 async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global cpu_alert, ram_alert, global_interval
@@ -77,6 +85,8 @@ async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for job in current_jobs:
         job.schedule_removal()
     await update.message.reply_text("Мониторинг остановлен")
+    message = current_jobs[0].data
+    await context.bot.unpin_chat_message(chat_id=update.effective_chat.id, message_id=message.id)
 
 
 async def got_it(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -88,15 +98,30 @@ async def got_it(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for job in current_jobs:
         job.schedule_removal()
 
-    context.job_queue.run_once(auto_restart, when=timedelta(minutes=15), chat_id=chat_id, name="restart_job")
+    message_restart = await update.message.reply_text(
+        f"Остановка оповещений на 15 минут\nПродолжение оповещений в {(datetime.now() + timedelta(minutes=15)).strftime('%H:%M:%S')}")
 
-    await update.message.reply_text(f"Остановка оповещений на 15 минут\nПродолжение оповещений в {(datetime.now() + timedelta(minutes=15)).strftime('%H:%M:%S')}")
+    context.job_queue.run_once(auto_restart, when=timedelta(minutes=15), chat_id=chat_id, data=message_restart, name="restart_job")
 
 
 async def auto_restart(context: ContextTypes.DEFAULT_TYPE):
     global message_to_edit
     chat_id = context.job.chat_id
+    await context.bot.delete_message(chat_id=chat_id, message_id=int(context.job.data.message_id))
     context.job_queue.run_repeating(monitoring_job, interval=global_interval, first=3, chat_id=chat_id, data=message_to_edit, name="monitoring_job")
+
+
+async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    monitoring_jobs = context.job_queue.get_jobs_by_name("monitoring_job")
+    if not monitoring_jobs:
+        restart_job = context.job_queue.get_jobs_by_name("restart_job")
+        if not restart_job:
+            await update.message.reply_text("Мониторинг не запущен\nРестарт не производится")
+        else:
+            await update.message.reply_text("Мониторинг перезапускается")
+    else:
+        await update.message.reply_text("Мониторинг запущен")
+
 
 def __main__():
     print(config.tg_token)
@@ -105,8 +130,9 @@ def __main__():
     bot_app.add_handler(CommandHandler("settings", settings))
     bot_app.add_handler(CommandHandler("stop", stop))
     bot_app.add_handler(CommandHandler("got_it", got_it))
+    bot_app.add_handler(CommandHandler("status", status))
     bot_app.run_polling()
 
-
+ 
 if __name__ == "__main__":
     __main__()
