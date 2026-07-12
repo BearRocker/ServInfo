@@ -2,9 +2,10 @@ import os
 from dataclasses import dataclass
 from dotenv import load_dotenv
 
-FETCH_INTERVAL_MINUTES = 5
 load_dotenv()
 
+
+#dataclass for possible future updates (but I guess it will be more reasonable to do in db)
 @dataclass
 class Config:
     tg_token: str

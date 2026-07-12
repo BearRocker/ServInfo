@@ -1,5 +1,3 @@
-# Idea to do: Server/PC resource check with tg possible idea connect wia ssh and get the info from that if tg is not possible on server
-# What to do up a local server (container obviously) or connect via ssh and use psutil for interface tg or web depends on what to use
 import logging
 import time
 from datetime import timedelta, datetime
@@ -77,7 +75,7 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global cpu_alert, ram_alert, global_interval
     chat_id = update.effective_chat.id
     if not context.args:
-        await update.message.reply_text("Error! Не правильная команда.\nВозможно вы иммели ввиду: /setting 10 90 90?")
+        await update.message.reply_text("Error! Не правильная команда.\nВозможно вы иммели ввиду: /setting <интервал(с)> <порог_cpu(%)> <порог_ram(%)>?")
     else:
         global_interval, cpu_alert, ram_alert = int(context.args[0]), int(context.args[1]), int(context.args[2])
         await context.bot.send_message(text=
@@ -164,6 +162,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await status(update, context)
     elif text == "Настройки":
         await show_settings(update, context)
+    else:
+        await update.message.reply_text("Ты чего понаписал, я не понимаю")
 
 
 def get_keyboard():
@@ -185,16 +185,12 @@ def get_keyboard():
 
 
 def __main__():
-    print(config.tg_token)
     bot_app = Application.builder().token(token=config.tg_token).build()
 
     bot_app.add_handler(CommandHandler("start", start))
-    #bot_app.add_handler(CommandHandler("start", start_up))
     bot_app.add_handler(CommandHandler("settings", settings))
     bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    #bot_app.add_handler(CommandHandler("stop", stop))
-    #bot_app.add_handler(CommandHandler("got_it", got_it))
-    #bot_app.add_handler(CommandHandler("status", status))
+
     bot_app.run_polling()
 
 
