@@ -17,9 +17,10 @@ class User:
     cpu_alert: int
     ram_alert: int
     time_for_restart: int
-    global_interval: int
+    interval: int
     message_to_edit: int
     language: str
+    started: bool
 
 
 def load_config() -> Config:
@@ -27,17 +28,14 @@ def load_config() -> Config:
         tg_token=os.getenv("TG_TOKEN")
     )
 
-def create_user(id: int, cpu: int, ram: int, restart_time: int, interval: int, message_id: int, language:str) -> User:
+def create_user(id: int, cpu: int, ram: int, restart_time: int, interval: int, message_id: int, language:str, started:bool) -> User:
     return User(
         chat_id=id,
         cpu_alert=cpu,
         ram_alert=ram,
         time_for_restart=restart_time,
-        global_interval=interval,
+        interval=interval,
         message_to_edit=message_id,
-        language=language
+        language=language,
+        started=started
     )
-
-
-def get_user_language(id:int) -> str:
-    return User.language
