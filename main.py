@@ -4,7 +4,8 @@ import time
 from datetime import timedelta
 import psutil
 import os
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters, CallbackQueryHandler
+from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters, CallbackQueryHandler, \
+    CallbackContext
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 from config import load_config, create_user, User
 
@@ -12,8 +13,6 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 config = load_config()
-
-started = False
 
 LANGUAGE = {
     "RUS": {"start": "Привет! Это бот для мониторинга ресурсов сервера.\n",
@@ -33,6 +32,7 @@ LANGUAGE = {
             "settings_btn": "Настройки",
             "stop_btn": "Стоп",
             "time_stop_btn": "Стоп {time_for_restart} минут",
+            "admin_btn": "Добавить пользователя",
             "starting": "Стартую мониторинг...",
             "stopping": "Останавливаю мониторинг...",
             "timeout": "Останавливаю на время",
@@ -41,7 +41,11 @@ LANGUAGE = {
                             "Порог CPU: {cpu_alert}%\n"
                             "Порог RAM: {ram_alert}%\n\n"
                             "Изменить: /settings <интервал(с)> <порог_cpu(%)> <порог_ram(%)>\n"
-                            "Пример: /settings 10 90 90"
+                            "Пример: /settings 10 90 90",
+            "admin_msg": "Введите id пользователя, которому вы хотите дать доступ",
+            "can't_understand": "Ты чего понаписал я не понимаю",
+            "successfully_added": "Пользователь с ID: {id} успешно добавлен",
+            "invalid_id": "Проблема с id пользователя"
             },
     "ENG": {"start": "Hi! This is simple bot for monitoring server resources.\n",
             "stop": "Stopping monitoring",
@@ -60,6 +64,7 @@ LANGUAGE = {
             "settings_btn": "Settings",
             "stop_btn": "Stop",
             "time_stop_btn": "Stop {time_for_restart} minutes",
+            "admin_btn": "Add user",
             "starting": "Starting monitoring...",
             "stopping": "Stopping monitoring...",
             "timeout": "Stopping monitoring for sometime",
@@ -68,26 +73,36 @@ LANGUAGE = {
                             "CPU usage limit: {cpu_alert}%\n"
                             "RAM usage limit: {ram_alert}%\n\n"
                             "Change: /settings <interval(seconds)> <cpu_limit(%)> <ram_limit(%)>\n"
-                            "Example: /settings 10 90 90"
+                            "Example: /settings 10 90 90",
+            "admin_msg": "Enter user id to give him permission",
+            "can't_understand": "There's no such command!",
+            "successfully_added": "User with {id} has been added",
+            "invalid_id": "There's a problem with id"
             }
 }
 
 users = {}
-
+approved_ids = [config.admin_id]
 
 def get_language_text(id:int, shortcut: str) -> str:
     user = users.get(id)
     user_language = user.language if user else None
     if user_language == "rus":
-        return LANGUAGE["RUS"][shortcut].format(time_for_restart=user.time_for_restart, cpu_alert=user.cpu_alert, ram_alert=user.ram_alert, global_interval=user.interval)
+        return LANGUAGE["RUS"][shortcut].format(time_for_restart=user.time_for_restart, cpu_alert=user.cpu_alert, ram_alert=user.ram_alert, global_interval=user.interval, id=approved_ids[-1])
     else:
-        return LANGUAGE["ENG"][shortcut].format(time_for_restart=user.time_for_restart, cpu_alert=user.cpu_alert, ram_alert=user.ram_alert, global_interval=user.interval)
+        return LANGUAGE["ENG"][shortcut].format(time_for_restart=user.time_for_restart, cpu_alert=user.cpu_alert, ram_alert=user.ram_alert, global_interval=user.interval, id=approved_ids[-1])
 
 
 def get_server_usage():
     ram = psutil.virtual_memory()
     cpu = psutil.cpu_percent(interval=1)
     return cpu, ram.percent, round(ram.used / 1e9, 2)
+
+
+async def add_approved_users(update: Update, context: CallbackContext):
+    chat_id = update.effective_user.id
+    context.user_data["waiting_message"] = True
+    await update.message.reply_text(text=get_language_text(chat_id, "admin_msg"))
 
 
 async def monitoring_job(context: ContextTypes.DEFAULT_TYPE):
@@ -106,16 +121,19 @@ async def monitoring_job(context: ContextTypes.DEFAULT_TYPE):
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [
-        [InlineKeyboardButton("RUS", callback_data="RUS")],
-        [InlineKeyboardButton("ENG", callback_data="ENG")],
-    ]
+    if update.effective_user.id in approved_ids:
+        keyboard = [
+            [InlineKeyboardButton("RUS", callback_data="RUS")],
+            [InlineKeyboardButton("ENG", callback_data="ENG")],
+        ]
 
-    await update.message.reply_text("RUS: Привет! Это бот для мониторинга ресурсов сервера.\n"
-                                    "Для начала использования выбери язык.\n"
-                                    "ENG: Hi! This is simple bot for monitoring server resources.\n"
-                                    "To start using bot you need to choose language.\n", reply_markup=InlineKeyboardMarkup(keyboard))
-
+        await update.message.reply_text("RUS: Привет! Это бот для мониторинга ресурсов сервера.\n"
+                                        "Для начала использования выбери язык.\n"
+                                        "ENG: Hi! This is simple bot for monitoring server resources.\n"
+                                        "To start using bot you need to choose language.\n", reply_markup=InlineKeyboardMarkup(keyboard))
+    else:
+        await update.message.reply_text("RUS: Извини, но тебе не выдали сюда доступ, ты знаешь кому обратиться\n"
+                                        "ENG: Sorry but you didn't get access you know who you need to message")
 
 async def start_after_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_user.id
@@ -123,6 +141,7 @@ async def start_after_language(update: Update, context: ContextTypes.DEFAULT_TYP
         [KeyboardButton(get_language_text(chat_id,"start_btn"))],
         [KeyboardButton(get_language_text(chat_id,"status_btn"))],
         [KeyboardButton(get_language_text(chat_id, "settings_btn"))],
+        [KeyboardButton(get_language_text(chat_id, "admin_btn"))] if chat_id == config.admin_id else [],
     ]
     await context.bot.send_message(chat_id=chat_id, text=get_language_text(chat_id, "start"), reply_markup=ReplyKeyboardMarkup(keyboard))
 
@@ -131,7 +150,7 @@ async def start_up(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for job in context.job_queue.get_jobs_by_name("restart_job"):
         job.schedule_removal()
 
-    monitoring_jobs = context.job_queue.get_jobs_by_name("monitoring_job")
+    monitoring_jobs = context.chat_data.get("monitoring_job") # Check logic for multi users
     if monitoring_jobs:
         await context.bot.send_message(text=get_language_text(chat_id, "already_started"), chat_id=chat_id)
         return
@@ -159,18 +178,16 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def show_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_user.id
-    await context.bot.send_message(text=get_language_text(chat_id, "settings_msg"), chat_id=chat_id
-                                   )
+    await context.bot.send_message(text=get_language_text(chat_id, "settings_msg"), chat_id=chat_id)
 
 
 async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    current_jobs = context.job_queue.get_jobs_by_name("monitoring_job")
+    current_jobs = context.chat_data.get("monitoring_job")
     chat_id = update.effective_user.id
     if not current_jobs:
         await context.bot.send_message(text=get_language_text(chat_id, "off"), chat_id=chat_id)
         return
-    for job in current_jobs:
-        job.schedule_removal()
+    current_jobs.schedule_removal()
     await context.bot.send_message(text=get_language_text(chat_id, "stop"), chat_id=chat_id)
     message = current_jobs[0].data
     await context.bot.unpin_chat_message(chat_id=update.effective_user.id, message_id=message.id)
@@ -178,12 +195,11 @@ async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def got_it(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_user.id
-    current_jobs = context.job_queue.get_jobs_by_name("monitoring_job")
+    current_jobs = context.chat_data.get("monitoring_job")
     if not current_jobs:
         await context.bot.send_message(text=get_language_text(chat_id, "off"), chat_id=chat_id)
         return
-    for job in current_jobs:
-        job.schedule_removal()
+    current_jobs.schedule_removal()
 
     message_restart = await context.bot.send_message(text=get_language_text(chat_id, "pause"), chat_id=chat_id)
 
@@ -212,24 +228,34 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     chat_id = update.effective_user.id
-    if text == "Старт" or text == "Start":
-        users.get(chat_id).started = True
-        await context.bot.send_message(chat_id=chat_id, text=get_language_text(chat_id, "starting"), reply_markup=get_keyboard(update.effective_user.id))
-        await start_up(update, context)
-    elif text == "Стоп" or text == "Stop":
-        users.get(chat_id).started = False
-        await context.bot.send_message(chat_id=chat_id, text=get_language_text(chat_id, "stopping"), reply_markup=get_keyboard(update.effective_user.id))
-        await stop(update, context)
-    elif text == "Стоп 15 минут" or text == "Stop 15 minutes":
-        users.get(chat_id).started = False
-        await context.bot.send_message(chat_id=chat_id, text=get_language_text(chat_id, "timeout"), reply_markup=get_keyboard(update.effective_user.id))
-        await got_it(update, context)
-    elif text == "Статус" or text == "Status":
-        await status(update, context)
-    elif text == "Настройки" or text == "Settings":
-        await show_settings(update, context)
-    else:
-        await update.message.reply_text("Ты чего понаписал, я не понимаю")
+    if chat_id in users:
+        if text == "Старт" or text == "Start":
+            users.get(chat_id).started = True
+            await context.bot.send_message(chat_id=chat_id, text=get_language_text(chat_id, "starting"), reply_markup=get_keyboard(update.effective_user.id))
+            await start_up(update, context)
+        elif text == "Стоп" or text == "Stop":
+            users.get(chat_id).started = False
+            await context.bot.send_message(chat_id=chat_id, text=get_language_text(chat_id, "stopping"), reply_markup=get_keyboard(update.effective_user.id))
+            await stop(update, context)
+        elif text == "Стоп 15 минут" or text == "Stop 15 minutes":
+            users.get(chat_id).started = False
+            await context.bot.send_message(chat_id=chat_id, text=get_language_text(chat_id, "timeout"), reply_markup=get_keyboard(update.effective_user.id))
+            await got_it(update, context)
+        elif text == "Статус" or text == "Status":
+            await status(update, context)
+        elif text == "Настройки" or text == "Settings":
+            await show_settings(update, context)
+        elif (text == "Добавить пользователя" or text == "Add user") and update.effective_user.id == config.admin_id:
+            await add_approved_users(update, context)
+        elif update.effective_user.id == config.admin_id and context.user_data.get("waiting_message"):
+            context.user_data["waiting_message"] = False
+            try:
+                approved_ids.append(int(text))
+                await update.message.reply_text(get_language_text(chat_id, "successfully_added"))
+            except ValueError:
+                await update.message.reply_text(get_language_text(chat_id, "invalid_id"))
+        else:
+            await update.message.reply_text(get_language_text(chat_id, "can't_understand"))
 
 
 def get_keyboard(chat_id: int):
@@ -239,12 +265,14 @@ def get_keyboard(chat_id: int):
             [KeyboardButton(get_language_text(chat_id, "time_stop_btn")),
             KeyboardButton(get_language_text(chat_id, "status_btn"))],
             [KeyboardButton(get_language_text(chat_id, "settings_btn"))],
+            [KeyboardButton(get_language_text(chat_id, "admin_btn"))] if chat_id == config.admin_id else [],
         ]
     else:
         keyboard = [
             [KeyboardButton(get_language_text(chat_id, "start_btn"))],
             [KeyboardButton(get_language_text(chat_id, "status_btn"))],
             [KeyboardButton(get_language_text(chat_id, "settings_btn"))],
+            [KeyboardButton(get_language_text(chat_id, "admin_btn"))] if chat_id == config.admin_id else [],
         ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -252,11 +280,11 @@ def get_keyboard(chat_id: int):
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    if query.data == "RUS":
+    if query.data == "RUS" and update.effective_user.id not in users:
         new_user = create_user(update.effective_user.id, 90, 90, 15, 10, 0, "rus", False)
         users[update.effective_user.id] = new_user
         await start_after_language(update, context)
-    elif query.data == "ENG":
+    elif query.data == "ENG" and update.effective_user.id not in users:
         new_user = create_user(update.effective_user.id, 90, 90, 15, 10, 0, "eng", False)
         users[update.effective_user.id] = new_user
         await start_after_language(update, context)
