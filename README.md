@@ -4,6 +4,7 @@
 1. ОС сервера и время сервера
 2. На сколько % занят процессор и оперативка и значение в GB оперативки
 ![main_messages.png](static/main_messages.png)
+
 Настройка параметров для уведомлений о проблемах с ресурсами производится посредством команды /settings
 ![rus_settings.png](static/rus_settings.png)
 ## Установка
@@ -17,6 +18,7 @@ Server info is provided in two separate messages:
 1. Server OS and server time which is non updatable and create on start up
 2. Resource usage of CPU and RAM updated every 10 seconds as default
 ![main_messages.png](static/main_messages.png)
+
 To set up your own parameters and see current settings you can click on button "Settings" and to edit settings you need to type /settings in chat with parameters
 ![eng_settings.png](static/eng_settings.png)
 ## Installation
