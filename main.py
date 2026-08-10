@@ -1,4 +1,4 @@
-import encodings
+import json
 import logging
 import time
 from datetime import timedelta
@@ -84,6 +84,7 @@ LANGUAGE = {
 users = {}
 approved_ids = [config.admin_id]
 
+
 def get_language_text(id:int, shortcut: str) -> str:
     user = users.get(id)
     user_language = user.language if user else None
@@ -126,11 +127,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("RUS", callback_data="RUS")],
             [InlineKeyboardButton("ENG", callback_data="ENG")],
         ]
-
+        if not(context.job_queue.get_jobs_by_name("auto_save")):
+            context.job_queue.run_repeating(auto_save, interval=config.auto_save, first=3, chat_id=update.effective_user.id, name="auto_save")
         await update.message.reply_text("RUS: Привет! Это бот для мониторинга ресурсов сервера.\n"
-                                        "Для начала использования выбери язык.\n"
-                                        "ENG: Hi! This is simple bot for monitoring server resources.\n"
-                                        "To start using bot you need to choose language.\n", reply_markup=InlineKeyboardMarkup(keyboard))
+                                            "Для начала использования выбери язык.\n"
+                                            "ENG: Hi! This is simple bot for monitoring server resources.\n"
+                                            "To start using bot you need to choose language.\n", reply_markup=InlineKeyboardMarkup(keyboard))
     else:
         await update.message.reply_text("RUS: Извини, но тебе не выдали сюда доступ, ты знаешь кому обратиться\n"
                                         "ENG: Sorry but you didn't get access you know who you need to message")
@@ -147,7 +149,7 @@ async def start_after_language(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def start_up(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_user.id
-    for job in context.job_queue.get_jobs_by_name("restart_job"):
+    for job in context.chat_data.get("restart_job"):
         job.schedule_removal()
 
     monitoring_jobs = context.chat_data.get("monitoring_job") # Check logic for multi users
@@ -174,6 +176,7 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         users.get(chat_id).interval, users.get(chat_id).cpu_alert, users.get(chat_id).ram_alert = int(context.args[0]), int(context.args[1]), int(context.args[2])
         await context.bot.send_message(text=get_language_text(chat_id, "settings_updated"), chat_id=chat_id)
+        await auto_save(context)
 
 
 async def show_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -212,11 +215,18 @@ async def auto_restart(context: ContextTypes.DEFAULT_TYPE):
     context.job_queue.run_repeating(monitoring_job, interval=users.get(chat_id).interval, first=3, chat_id=chat_id, data=users.get(chat_id).message, name="monitoring_job")
 
 
+async def auto_save(context: ContextTypes.DEFAULT_TYPE):
+    with open("users.json", "w") as save_file:
+        json.dump(users, save_file, indent=4)
+    with open("approved_ids.json", "w") as save_file:
+        json.dump(approved_ids, save_file, indent=4)
+
+
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    monitoring_jobs = context.job_queue.get_jobs_by_name("monitoring_job")
+    monitoring_jobs = context.chat_data.get("monitoring_job")
     chat_id = update.effective_user.id
     if not monitoring_jobs:
-        restart_job = context.job_queue.get_jobs_by_name("restart_job")
+        restart_job = context.chat_data.get("restart_job")
         if not restart_job:
             await context.bot.send_message(text=get_language_text(chat_id, "status_off"), chat_id=chat_id)
         else:
@@ -290,8 +300,20 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await start_after_language(update, context)
 
 
+def load_save_files():
+    global users, approved_ids
+    try:
+        with open("users.json", "r") as save_file:
+            users = json.load(save_file)
+        with open("approved_ids.json", "r") as save_file:
+            approved_ids = json.load(save_file)
+    except FileNotFoundError:
+        pass
+
 def __main__():
     bot_app = Application.builder().token(token=config.tg_token).build()
+
+    load_save_files()
 
     bot_app.add_handler(CommandHandler("start", start))
     bot_app.add_handler(CommandHandler("settings", settings))

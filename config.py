@@ -10,6 +10,7 @@ load_dotenv()
 class Config:
     tg_token: str
     admin_id: int
+    auto_save: int
 
 
 @dataclass
@@ -28,6 +29,7 @@ def load_config() -> Config:
     return Config(
         tg_token=os.getenv("TG_TOKEN"),
         admin_id=int(os.getenv("ADMIN_ID")),
+        auto_save=int(os.getenv("AUTO_SAVE")),
     )
 
 def create_user(id: int, cpu: int, ram: int, restart_time: int, interval: int, message_id: int, language:str, started:bool) -> User:
