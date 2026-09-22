@@ -1,5 +1,6 @@
 import os
 from dataclasses import dataclass
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -11,6 +12,7 @@ class Config:
     tg_token: str
     admin_id: int
     auto_save: int
+    data_dir: str
 
 
 @dataclass
@@ -25,14 +27,19 @@ class User:
     started: bool
 
 
-def load_config() -> Config:
+def load_config():
+    missing = [name for name in ("TG_TOKEN", "ADMIN_ID", "AUTO_SAVE") if not os.getenv(name)]
+    if missing:
+        raise SystemExit(f"Missing environment variables: {', '.join(missing)}")
     return Config(
         tg_token=os.getenv("TG_TOKEN"),
         admin_id=int(os.getenv("ADMIN_ID")),
         auto_save=int(os.getenv("AUTO_SAVE")),
+        data_dir=os.getenv("DATA_DIR", "."),
     )
 
-def create_user(id: int, cpu: int, ram: int, restart_time: int, interval: int, message_id: int, language:str, started:bool) -> User:
+
+def create_user(id: int, cpu: int, ram: int, restart_time: int, interval: int, message_id: int, language: str, started: bool):
     return User(
         chat_id=id,
         cpu_alert=cpu,
