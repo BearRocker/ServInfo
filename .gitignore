@@ -1,1 +1,7 @@
 .env
+users.json
+approved_ids.json
+__pycache__/
+*.pyc
+.venv/
+ 

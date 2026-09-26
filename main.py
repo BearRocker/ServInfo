@@ -31,8 +31,8 @@ LANGUAGE = {
             "restart": "Мониторинг перезапускается",
             "CPU_LIMIT": "Процессор загружен больше, чем на {cpu_alert}%",
             "RAM_LIMIT": "Оперативная память загружена более, чем на {ram_alert}%",
-            "wrong_settings": "Не правильная команда.\nВозможно вы имели ввиду: /settings <интервал(с)> <порог_cpu(%)> <порог_ram(%)>?",
-            "settings_updated": "Настройки обновлены\nИнтервал: {global_interval}с\nCPU: {cpu_alert}%\nRAM: {ram_alert}%",
+            "wrong_settings": "Не правильная команда.\nВозможно вы имели ввиду: /settings <интервал(с)> <порог_cpu(%)> <порог_ram(%)> [пауза(мин)]?\n Пауза не обязательна, принимаемые значения от 1 до 30 минут",
+            "settings_updated": "Настройки обновлены\nИнтервал: {global_interval}с\nCPU: {cpu_alert}%\nRAM: {ram_alert}%\nПауза: {time_for_restart} мин",
             "start_btn": "Старт",
             "status_btn": "Статус",
             "settings_btn": "Настройки",
@@ -45,9 +45,10 @@ LANGUAGE = {
             "settings_msg": "Текущие настройки:\n"
                             "Интервал: {global_interval} сек\n"
                             "Порог CPU: {cpu_alert}%\n"
-                            "Порог RAM: {ram_alert}%\n\n"
-                            "Изменить: /settings <интервал(с)> <порог_cpu(%)> <порог_ram(%)>\n"
-                            "Пример: /settings 10 90 90",
+                            "Порог RAM: {ram_alert}%\n"
+                            "Пауза: {time_for_restart} мин\n\n"
+                            "Изменить: /settings <интервал(с)> <порог_cpu(%)> <порог_ram(%)> [пауза(мин)]\n"
+                            "Пример: /settings 10 90 90 15",
             "admin_msg": "Введите id пользователя, которому вы хотите дать доступ",
             "can't_understand": "Ты чего понаписал я не понимаю",
             "successfully_added": "Пользователь с ID: {id} успешно добавлен",
@@ -63,8 +64,8 @@ LANGUAGE = {
             "restart": "Monitoring is restarting",
             "CPU_LIMIT": "CPU usage over {cpu_alert}%",
             "RAM_LIMIT": "RAM usage over {ram_alert}%",
-            "wrong_settings": "Wrong command.\nMaybe you mean: /settings <interval(sec)> <cpu_limit(%)> <ram_limit(%)>?",
-            "settings_updated": "Settings updated\nInterval: {global_interval} seconds\nCPU: {cpu_alert}%\nRAM: {ram_alert}%",
+            "wrong_settings": "Wrong command.\nMaybe you mean: /settings <interval(sec)> <cpu_limit(%)> <ram_limit(%)> [pause(min)]? Pause is optional, from 1 to 30 minutes.\n",
+            "settings_updated": "Settings updated\nInterval: {global_interval} seconds\nCPU: {cpu_alert}%\nRAM: {ram_alert}%\nPause: {time_for_restart} min",
             "start_btn": "Start",
             "status_btn": "Status",
             "settings_btn": "Settings",
@@ -77,9 +78,10 @@ LANGUAGE = {
             "settings_msg": "Current settings:\n"
                             "Interval: {global_interval} seconds\n"
                             "CPU usage limit: {cpu_alert}%\n"
-                            "RAM usage limit: {ram_alert}%\n\n"
-                            "Change: /settings <interval(seconds)> <cpu_limit(%)> <ram_limit(%)>\n"
-                            "Example: /settings 10 90 90",
+                            "RAM usage limit: {ram_alert}%\n"
+                            "Pause: {time_for_restart} min\n\n"
+                            "Change: /settings <interval(seconds)> <cpu_limit(%)> <ram_limit(%)> [pause(min)]\n"
+                            "Example: /settings 10 90 90 15",
             "admin_msg": "Enter user id to give him permission",
             "can't_understand": "There's no such command!",
             "successfully_added": "User with {id} has been added",
@@ -89,7 +91,7 @@ LANGUAGE = {
 
 BUTTONS = ("start_btn", "stop_btn", "time_stop_btn", "status_btn", "settings_btn", "admin_btn")
 DEFAULT_USER = create_user(0, 90, 90, 15, 10, 0, "eng", False)
-
+PAUSE_MIN, PAUSE_MAX = 1, 30
 users: dict[int, User] = {}
 approved_ids: list[int] = [config.admin_id]
 
@@ -226,15 +228,25 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_approved(update) or chat_id not in users:
         return
     try:
-        interval, cpu_alert, ram_alert = (int(arg) for arg in context.args)
+        values = [int(arg) for arg in context.args]
+        interval, cpu_alert, ram_alert = values[0], values[1], values[2]
+        pause_ok = len(values) == 3 or (len(values) == 4 and PAUSE_MIN <= values[3] <= PAUSE_MAX)
     except ValueError:
+        await update.message.reply_text(get_language_text(chat_id, "wrong_settings"))
+        return
+    except IndexError:
         await update.message.reply_text(get_language_text(chat_id, "wrong_settings"))
         return
     if interval < 1 or not 0 < cpu_alert <= 100 or not 0 < ram_alert <= 100:
         await update.message.reply_text(get_language_text(chat_id, "wrong_settings"))
         return
+    if not pause_ok:
+        await update.message.reply_text(get_language_text(chat_id, "wrong_settings"))
+        return
     user = users[chat_id]
     user.interval, user.cpu_alert, user.ram_alert = interval, cpu_alert, ram_alert
+    if len(values) == 4:
+        user.time_for_restart = values[3]
     # Apply the new interval to a running monitoring job
     running_jobs = get_jobs(context, "monitoring", chat_id)
     if running_jobs:
