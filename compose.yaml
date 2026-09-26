@@ -1,0 +1,30 @@
+services:
+  servinfo:
+    image: ghcr.io/bearrocker/servinfo:latest
+    build: .
+    container_name: servinfo
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - servinfo-data:/data
+      - /etc/localtime:/etc/localtime:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  servinfo-data:

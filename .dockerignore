@@ -1,0 +1,10 @@
+.env
+.git
+.github
+.venv
+__pycache__
+*.pyc
+static
+users.json
+approved_ids.json
+README.md
